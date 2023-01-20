@@ -1,26 +1,34 @@
-{*****************************************************************}
-{ This is a component for placing icons in the notification area  }
-{ of the Windows taskbar (aka. the traybar).                      }
-{                                                                 }
-{ It is an expanded version of my CoolTrayIcon component, which   }
-{ you will need to make this work. The expanded features allow    }
-{ you to easily draw text in the tray icon.                       }
-{                                                                 }
-{ The component is freeware. Feel free to use and improve it.     }
-{ I would be pleased to hear what you think.                      }
-{                                                                 }
-{ Troels Jakobsen - troels.jakobsen@gmail.com                     }
-{ Copyright (c) 2006                                              }
-{                                                                 }
-{ Portions by Jouni Airaksinen - mintus@codefield.com             }
-{*****************************************************************}
-
 unit TextTrayIcon;
+
+{-------------------------------------------------------------------------------------------------------------
+ This is a component for placing icons in the notification area  of the Windows taskbar (aka. the traybar).
+ It is an expanded version of my CoolTrayIcon component, which you will need to make this work.
+ The expanded features allow you to easily draw text in the tray icon.
+ The component is freeware. Troels Jakobsen - troels.jakobsen@gmail.com - Copyright 2006.  Portions by Jouni Airaksinen - mintus@codefield.com
+
+ Code updates 01.2023
+ by GabrielMoraru.com
+
+    Brought up to date for Delphi 10.4 and Delphi 11
+    Code cleanup
+    Reformatting
+    Safer code
+    Fixed some issue
+    Added two extra functions
+    Better documentation about how to use the components
+    Let user know if MainFormOnTaskbar is True.
+
+ Known issues
+    1. It doesn work if Application.MainFormOnTaskbar= true. The requirement is to set MainFormOnTaskbar = false before Application.Run() is called.
+    2. The TTrayIcon doesn't work properly if we call it during app start up. We can use a timer to check a bit later if the application needs to start minimized.
+
+-------------------------------------------------------------------------------------------------------------}
+
 
 interface
 
 uses
-  CoolTrayIcon, Windows, Graphics, Classes, Controls;
+  CoolTrayIcon, Windows, System.Classes, Vcl.Graphics, Vcl.Controls;
 
 type
   TOffsetOptions = class(TPersistent)
@@ -58,8 +66,8 @@ type
     procedure SetBackgroundIcon(Value: TIcon);
   protected
     procedure Loaded; override;
-    function LoadDefaultIcon: Boolean; override;
-    function LoadDefaultBackgroundIcon: Boolean; virtual;
+    function  LoadDefaultIcon: Boolean; override;
+    function  LoadDefaultBackgroundIcon: Boolean; virtual;
     procedure Paint; virtual;
     procedure SetText(Value: String);
     procedure SetTextBitmap(Value: TBitmap);
@@ -68,8 +76,7 @@ type
     procedure SetBorder(Value: Boolean);
     procedure SetBorderColor(Value: TColor);
     procedure SetOffsetOptions(Value: TOffsetOptions);
-    function TransparentBitmapToIcon(const Bitmap: TBitmap; const Icon: TIcon;
-      MaskColor: TColor): Boolean;
+    procedure TransparentBitmapToIcon(const Bitmap: TBitmap; const Icon: TIcon; MaskColor: TColor);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -80,16 +87,17 @@ type
     property Font: TFont read FFont write SetFont;
     property Color: TColor read FColor write SetColor default clBtnFace;
     property Border: Boolean read FBorder write SetBorder;
-    property BorderColor: TColor read FBorderColor write SetBorderColor
-      default clBlack;
+    property BorderColor: TColor read FBorderColor write SetBorderColor default clBlack;
     property Options: TOffsetOptions read FOffsetOptions write SetOffsetOptions;
   end;
 
+procedure Register;
 
-implementation
+IMPLEMENTATION
 
 uses
   SysUtils;
+
 
 {------------------- TOffsetOptions -------------------}
 
@@ -163,15 +171,14 @@ end;
 destructor TTextTrayIcon.Destroy;
 begin
   try
-    FFont.Free;
-    FTextBitmap.Free;
-    FOffsetOptions.Free;
+     FreeAndNil( FFont );
+     FreeAndNil( FTextBitmap);
+     FreeAndNil( FOffsetOptions);
     try
-      if FBackgroundIcon <> nil then
-        FBackgroundIcon.Free;
+      if FBackgroundIcon <> NIL
+      then FreeAndNil(FBackgroundIcon);
     except
-      on Exception do
-        // Do nothing; the background icon seems to be invalid
+     // Do nothing; the background icon seems to be invalid
     end;
   finally
     inherited Destroy;
@@ -187,25 +194,21 @@ end;
 
 
 function TTextTrayIcon.LoadDefaultIcon: Boolean;
-{ We don't want a default icon, so we override this method inherited
-  from CoolTrayIcon. }
+{ We don't want a default icon, so we override this method inherited from CoolTrayIcon. }
 begin
   Result := False;           // No thanks, no default icon
 end;
 
 
 function TTextTrayIcon.LoadDefaultBackgroundIcon: Boolean;
-{ This method is called to determine whether to assign a default bg. icon
-  to the component. Descendant classes can override the method to change
-  this behavior. }
+{ This method is called to determine whether to assign a default bg. icon to the component. Descendant classes can override the method to change this behavior. }
 begin
   Result := False;           // No thanks, no default bg. icon
 end;
 
 
 procedure TTextTrayIcon.FontChanged(Sender: TObject);
-{ This method is invoked when user assigns to Font (but not when Font is set
-  directly to another TFont var.) }
+{ This method is invoked when user assigns to Font (but not when Font is set directly to another TFont var.) }
 begin
   Draw;
 end;
@@ -254,9 +257,7 @@ end;
 
 
 procedure TTextTrayIcon.SetOffsetOptions(Value: TOffsetOptions);
-{ This method will only be invoked if the user creates a new
-  TOffsetOptions object. User will probably just set the values
-  of the existing TOffsetOptions object. }
+{ This method will only be invoked if the user creates a new TOffsetOptions object. User will probably just set the values of the existing TOffsetOptions object. }
 begin
   FOffsetOptions.Assign(Value);
   Draw;
@@ -264,8 +265,7 @@ end;
 
 
 procedure TTextTrayIcon.OffsetOptionsChanged(OffsetOptions: TObject);
-{ This method will be invoked when the user changes the values of the
-  existing TOffsetOptions object. }
+{ This method will be invoked when the user changes the values of the existing TOffsetOptions object. }
 begin
   Draw;
 end;
@@ -281,33 +281,29 @@ end;
 procedure TTextTrayIcon.Draw;
 var
   Ico: TIcon;
-  rc: Boolean;
 begin
+  if NOT IconVisible then EXIT;       // Mine
+
   CycleIcons := False;       // We cannot cycle and draw at the same time
   Paint;                     // Render FTextBitmap
   Ico := TIcon.Create;
-  if (Assigned(FBackgroundIcon)) and not (FBackgroundIcon.Empty) then
-    // Draw text transparently on background icon
-    rc := TransparentBitmapToIcon(FTextBitmap, Ico, FColor)
+  if (Assigned(FBackgroundIcon)) and not (FBackgroundIcon.Empty)
+  then TransparentBitmapToIcon(FTextBitmap, Ico, FColor)    // Draw text transparently on background icon
   else
-  begin
+   begin
     // Just draw text; no background icon
-    if FColor <> clNone then
-      FInvertTextColor := clNone;
-    rc := BitmapToIcon(FTextBitmap, Ico, FInvertTextColor);
-  end;
+    if FColor <> clNone
+    then FInvertTextColor := clNone;
+    BitmapToIcon(FTextBitmap, Ico, FInvertTextColor);
+   end;
 
-  if rc then
-  begin
-    Icon.Assign(Ico);
-//    Refresh;                 // Always refresh after icon assignment
-    Ico.Free;
-  end;
+  Icon.Assign(Ico);
+  // Refresh;                 // Always refresh after icon assignment
+  FreeAndNil(Ico);
 end;
 
 
-function TTextTrayIcon.TransparentBitmapToIcon(const Bitmap: TBitmap;
-  const Icon: TIcon; MaskColor: TColor): Boolean;
+procedure TTextTrayIcon.TransparentBitmapToIcon(const Bitmap: TBitmap; const Icon: TIcon; MaskColor: TColor);
 { Render an icon from a 16x16 bitmap. Return false if error.
   MaskColor is a color that will be rendered transparently. Use clNone for
   no transparency. }
@@ -318,14 +314,12 @@ var
 begin
   BitmapImageList := TImageList.CreateSize(16, 16);
   try
-    Result := False;
     BitmapImageList.AddIcon(FBackgroundIcon);
     Bmp := TBitmap.Create;
 
-    if (FColor = clNone) or (FColor = FFont.Color) then
-      FInvertColor := ColorToRGB(FFont.Color) xor $00FFFFFF
-    else
-      FInvertColor := MaskColor;
+    if (FColor = clNone) or (FColor = FFont.Color)
+    then FInvertColor := ColorToRGB(FFont.Color) xor $00FFFFFF
+    else FInvertColor := MaskColor;
 
     Bmp.Canvas.Brush.Color := FInvertColor;
     BitmapImageList.GetBitmap(0, Bmp);
@@ -335,10 +329,9 @@ begin
 
     BitmapImageList.AddMasked(Bmp, FInvertColor);
     BitmapImageList.GetIcon(1, Icon);
-    Bmp.Free;
-    Result := True;
+    FreeAndNil( Bmp);
   finally
-    BitmapImageList.Free;
+     FreeAndNil(BitmapImageList );
   end;
 end;
 
@@ -358,7 +351,8 @@ begin
 //    Bitmap.Canvas.TextFlags := 2;         // ETO_OPAQUE
 
     // Render background rectangle
-    if (FColor = clNone) or (FColor = FFont.Color) then
+    if (FColor = clNone) or (FColor = FFont.Color)
+    then
       FInvertTextColor := ColorToRGB(FFont.Color) xor $00FFFFFF
     else
       FInvertTextColor := FColor;
@@ -368,54 +362,60 @@ begin
     // Render text; check for line breaks
     Bitmap.Canvas.Font.Assign(FFont);
     Substr := StrPos(PChar(FText), #13);
-    if Substr = nil then
-    begin
-      // No line breaks
-      Left := (15 - Bitmap.Canvas.TextWidth(FText)) div 2;
-      if FOffsetOptions <> nil then
-        Left := Left + FOffsetOptions.OffsetX;
-      Top := (15 - Bitmap.Canvas.TextHeight(FText)) div 2;
-      if FOffsetOptions <> nil then
-        Top := Top + FOffsetOptions.OffsetY;
-      Bitmap.Canvas.TextOut(Left, Top, FText);
-    end
+    if Substr = nil
+    then
+     begin
+       // No line breaks
+       Left := (15 - Bitmap.Canvas.TextWidth(FText)) div 2;
+       if FOffsetOptions <> nil
+       then Left := Left + FOffsetOptions.OffsetX;
+       Top := (15 - Bitmap.Canvas.TextHeight(FText)) div 2;
+       if FOffsetOptions <> nil
+       then Top := Top + FOffsetOptions.OffsetY;
+       Bitmap.Canvas.TextOut(Left, Top, FText);
+     end
     else
-    begin
-      // Line breaks
-      Strings := TList.Create;
-      SplitText(Strings);
-      LineHeight := Bitmap.Canvas.TextHeight(Substr);
-      if FOffsetOptions <> nil then
-        LineHeight := LineHeight + FOffsetOptions.LineDistance;
-      LinesTop := (15 - (LineHeight * Strings.Count)) div 2;
-      if FOffsetOptions <> nil then
-        LinesTop := LinesTop + FOffsetOptions.OffsetY;
-      for I := 0 to Strings.Count -1 do
-      begin
-        Substr := Strings[I];
-        Left := (15 - Bitmap.Canvas.TextWidth(Substr)) div 2;
+     begin
+       // Line breaks
+       Strings := TList.Create;
+       TRY
+        SplitText(Strings);
+        LineHeight := Bitmap.Canvas.TextHeight(Substr);
         if FOffsetOptions <> nil then
-          Left := Left + FOffsetOptions.OffsetX;
-        Top := LinesTop + (LineHeight * I);
-        Bitmap.Canvas.TextOut(Left, Top, Substr);
-      end;
-      for I := 0 to Strings.Count -1 do
-        StrDispose(PWideChar(Strings[I]));
-      Strings.Free;
-    end;
+          LineHeight := LineHeight + FOffsetOptions.LineDistance;
+        LinesTop := (15 - (LineHeight * Strings.Count)) div 2;
+        if FOffsetOptions <> nil then
+          LinesTop := LinesTop + FOffsetOptions.OffsetY;
+        for I := 0 to Strings.Count -1 do
+        begin
+          Substr := Strings[I];
+          Left := (15 - Bitmap.Canvas.TextWidth(Substr)) div 2;
+          if FOffsetOptions <> nil
+          then Left := Left + FOffsetOptions.OffsetX;
+          Top := LinesTop + (LineHeight * I);
+          Bitmap.Canvas.TextOut(Left, Top, Substr);
+        end;
+
+        for I := 0 to Strings.Count -1 do
+          StrDispose(PChar(Strings[I]));
+
+       FINALLY
+        FreeAndNil(Strings );
+       END;
+     end;
 
     // Render border
     if FBorder then
-    begin
+     begin
       Bitmap.Canvas.Brush.Color := FBorderColor;
       Bitmap.Canvas.FrameRect(Rect(0, 0, 16, 16));
-    end;
+     end;
 
     // Assign the final bitmap
     FTextBitmap.Assign(Bitmap);
 
   finally
-    Bitmap.Free;
+     FreeAndNil(Bitmap );
   end;
 end;
 
@@ -423,14 +423,12 @@ end;
 procedure TTextTrayIcon.SplitText(const Strings: TList);
 
   function PeekedString(S: String): String;
-  var
-    P: Integer;
+  var  P: Integer;
   begin
     P := Pos(#13, S);
-    if P = 0 then
-      Result := S
-    else
-      Result := Copy(S, 1, P-1);
+    if P = 0
+    then Result := S
+    else Result := Copy(S, 1, P-1);
   end;
 
 var
@@ -440,21 +438,30 @@ var
 begin
   Strings.Clear;
   Substr := FText;
-  repeat
+  REPEAT
     P := Pos(#13, Substr);
     if P = 0 then
-    begin
-      S := StrNew(PChar(Substr));
-      Strings.Add(S);
-    end
+     begin
+       S := StrNew(PChar(Substr));
+       Strings.Add(S);
+     end
     else
-    begin
-      S := StrNew(PChar(PeekedString(Substr)));
-      Strings.Add(S);
-      Delete(Substr, 1, P);
-    end;
-  until P = 0;
+     begin
+       S := StrNew(PChar(PeekedString(Substr)));
+       Strings.Add(S);
+       Delete(Substr, 1, P);
+     end;
+  UNTIL P = 0;
 end;
 
-end.
 
+
+
+
+procedure Register;
+begin
+  RegisterComponents('3rd_party', [TTextTrayIcon]);
+end;
+
+
+end.
